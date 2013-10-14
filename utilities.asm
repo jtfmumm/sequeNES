@@ -6,35 +6,57 @@
 ;;   ////     //    //////  //////  //////    //    //////  //////  //////  ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+.org $D000
+
+play_note:
+	ldx this_note
+	lda c_range, x
+    asl a               ;multiply by 2 because we are indexing into a table of words
+    tay
+    lda note_table, y   ;read the low byte of the period
+    sta $4002           ;write to SQ1_LO
+    lda note_table+1, y ;read the high byte of the period
+    sta $4003           ;write to SQ1_HI
+    rts
+
 get_next_seq:
 	lda #00
 	ldx #16 					;Keep track of how many steps are left
 	ldy #00 					;Keep track of where in the 16-note seq we are
 -	cmp seq_cur_page			;Which page are we taking our notes from?
 	bne +						;If page 1, go there
-	lda (seq0), seq_cur_entry	;Load the value of page 0 plus our current entry
-	sta (note0), y 				;Store it in the next seq spot
+	txa							;Preserve our x
+	pha
+	ldx seq_cur_entry		    
+	lda seq0, x					;Load the value of page 0 plus our current entry
+	sta note0, y 				;Store it in the next seq spot
+	pla 						;Get our x back
+	tax
 	iny
 	inc seq_cur_entry			;Did we move to the end of the page?
-	beq @switch_page
+	beq ++
 	dex
 	bne -						;Do we have steps left?
 	rts
-+   lda (seq1), seq_cur_entry 	;See above comments
-	sta (note0), y
++   txa
+	pha
+	ldx seq_cur_entry
+	lda seq1, x				 	;See above comments
+	sta note0, y
+	pla							;Get our x back
+	tax
 	iny
 	inc seq_cur_entry
-	beq @switch_page
+	beq ++
 	dex
 	bne -
 	rts
-@switch_page:
+++  ;Switch page
 	lda seq_cur_page			;Use eor to toggle page betw 0 and 1
 	eor #$01
 	sta seq_cur_page
-	lda #00
 	dex							;Check to see if we have steps left
-	cpx
+	cpx #00
 	bne -						
 	rts
 
@@ -87,7 +109,7 @@ multiply_rand:
 	sta ans1
 	sta ans0
 	ldx #24		;load bit count for multiplier
-@loop:
+--	;Loop
 	lsr #00		;grab next bit of multiplier (but its two high bytes are zero)
 	ror mult1	 
 	ror mult0
@@ -128,7 +150,7 @@ multiply_rand:
 	ror ans1
 	ror ans0
 	dex			;Decrement multiplier byte count
-	bne @loop
+	bne --
 
 	lda ans7	;Store new rand
 	sta rand7

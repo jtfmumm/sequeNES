@@ -1,7 +1,3 @@
-;;Only put constants here.
-;;We have not started a bank yet, so we cannot start the program itself
-;;No opcodes
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Arguments for subroutines ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -71,7 +67,21 @@ seq_cur_entry = #00
 seq0 = $D100
 seq1 = $D1FF
 
-this_note = $00
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; INITIAL VALUES ;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+	lda #$A7	;Store $41A7 as multiplier (16807);
+	sta mult0
+	lda #$41
+	sta mult1
+	lda #$FF 	;Store $3FFFFFFF as modulus (2^31 - 1)
+	sta mod0
+	lda #$FF
+	sta mod1
+	lda #$FF
+	sta mod2
+	lda #$3F
+	sta mod3
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;
@@ -216,8 +226,5 @@ A8 = $54
 As8 = $55
 Bb8 = $55
 B8 = $56
-
-
-
 
 

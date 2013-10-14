@@ -1,4 +1,5 @@
 
+
 ;----------------------------------------------------------------
 ; variables
 ;----------------------------------------------------------------
@@ -19,81 +20,37 @@
 
    ;.enum $0200
    ;.ende
-;;;;;;;;;;;;;;
-;Addresses
-;;;;;;;;;;;;;;
-mod0 = $00D0	;Modulus stored in 4 bytes
-mod1 = $00D1
-mod2 = $00D2
-mod3 = $00D3
-mult0 = $00D4	;Multiplier stored in 2 bytes
-mult1 = $00D5
-rand0 = $00D6	;Current rand stored in 8 bytes
-rand1 = $00D7
-rand2 = $00D8
-rand3 = $00D9
-rand4 = $00DA
-rand5 = $00DB
-rand6 = $00DC
-rand7 = $00DD
-ans0 = $00DE	;Scratch pad stored in 8 bytes
-ans1 = $00DF
-ans2 = $00E0
-ans3 = $00E1
-ans4 = $00E2
-ans5 = $00E3
-ans6 = $00E4
-ans7 = $00E5
-note0 = $00E6	;Current sequence of 16 notes
-note1 = $00E7
-note2 = $00E8
-note3 = $00E9
-note4 = $00EA
-note5 = $00EB
-note6 = $00EC
-note7 = $00ED
-note8 = $00EE
-note9 = $00EF
-noteA = $00F0
-noteB = $00F1
-noteC = $00F2
-noteD = $00F3
-noteE = $00F4
-noteF = $00F5
-seq_cur_page = #00
-seq_cur_entry = #00
-
-seq0 = $D100
-seq1 = $D1FF
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;; INITIAL VALUES ;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;
-	lda #$A7	;Store $41A7 as multiplier (16807)
-	sta mult0
-	lda #$41
-	sta mult1
-	lda #$FF 	;Store $3FFFFFFF as modulus (2^31 - 1)
-	sta mod0
-	lda #$FF
-	sta mod1
-	lda #$FF
-	sta mod2
-	lda #$3F
-	sta mod3
-
-
-
-
-
-
-
-    
+     
 ;----------------------------------------------------------------
 ; program bank(s)
 ;----------------------------------------------------------------
 
     .base $10000-(PRG_COUNT*$4000)  ;$C000 for one page, $8000 for two pages
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; INITIAL VALUES ;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+	lda #$A7	;Store $41A7 as multiplier (16807);
+	sta $D4 ;mult0
+	lda #$41
+	sta $D5 ;mult1
+	lda #$FF 	;Store $3FFFFFFF as modulus (2^31 - 1)
+	sta $D0 ;mod0
+	lda #$FF
+	sta $D1 ;mod1
+	lda #$FF
+	sta $D2 ;mod2
+	lda #$3F
+	sta $D3 ;mod3
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; SCALES/SYSTEMS ;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+c_range:
+	.db C3, D3, E3, F3, G3, A3, B3, C4, D4, E4, F4, G4, A4, B4, C5, D5
+
 
 ;    .org $C000
 
@@ -228,6 +185,34 @@ IRQ:
 
 
 ;;;;MY SUBROUTINES
+play_seq:
+    lda #%00000001
+    sta $4015 ;enable square 1
+ 
+    lda #%10110011 ;Duty 10, Volume F
+    sta $4000
+    ldy #00 	;Initialize current note
+
+-   lda #$03
+	sta this_note
+	jsr play_note
+    lda #01
+    sta arg0
+    jsr rep_delay
+    ldx #$05
+	lda c_range, x      ;A2.  #A2 will evaluate to #$0C
+    asl a               ;multiply by 2 because we are indexing into a table of words
+    tay
+    lda note_table, y   ;read the low byte of the period
+    sta $4002           ;write to SQ1_LO
+    lda note_table+1, y ;read the high byte of the period
+    sta $4003           ;write to SQ1_HI
+    lda #01
+    sta arg0
+    jsr rep_delay
+    jsr -
+    rts	
+
 delay:
     ;255^3 cycles is roughly 1 second (92.5%)... 1,789,772 cycles is one second
     ldx #$FF
@@ -279,14 +264,14 @@ test_audio:
     lda #%10110011 ;Duty 10, Volume F
     sta $4000
 
--   lda #$C9    ;0C9 is a C# in NTSC mode
+-   lda #$1B    ;0C9 is a C# in NTSC mode
     sta $4002
     lda #$00
     sta $4003
     lda #01
     sta arg0
     jsr rep_delay
-    lda #$A0
+    lda #$22
     sta $4002
     lda #$00
     sta $4003
