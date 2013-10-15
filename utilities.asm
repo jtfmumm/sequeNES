@@ -17,13 +17,29 @@ play_note:
     sta $4002           ;write to SQ1_LO
     lda note_table+1, y ;read the high byte of the period
     sta $4003           ;write to SQ1_HI
-    rts
+    inc seq_cur_entry
+    lda seq_cur_entry	;Check for wraparound at 16
+    sec
+    sbc #16
+    bne +
+    sta seq_cur_entry
++   rts
+
+quick_seq:
+	ldx #08
+	ldy #00
+-	lda seq0, y
+	sta note0, y
+	iny
+	dex
+	bne -
+	rts
 
 get_next_seq:
-	lda #00
 	ldx #16 					;Keep track of how many steps are left
 	ldy #00 					;Keep track of where in the 16-note seq we are
--	cmp seq_cur_page			;Which page are we taking our notes from?
+-	lda #00
+	cmp seq_cur_page			;Which page are we taking our notes from?
 	bne +						;If page 1, go there
 	txa							;Preserve our x
 	pha
@@ -34,6 +50,8 @@ get_next_seq:
 	tax
 	iny
 	inc seq_cur_entry			;Did we move to the end of the page?
+	sec 						;Check for wraparound at 16
+	sbc #16
 	beq ++
 	dex
 	bne -						;Do we have steps left?
@@ -47,11 +65,15 @@ get_next_seq:
 	tax
 	iny
 	inc seq_cur_entry
+	sec
+	sbc #16
 	beq ++
 	dex
 	bne -
 	rts
 ++  ;Switch page
+	lda #00
+	sta seq_cur_entry
 	lda seq_cur_page			;Use eor to toggle page betw 0 and 1
 	eor #$01
 	sta seq_cur_page
@@ -59,6 +81,127 @@ get_next_seq:
 	cpx #00
 	bne -						
 	rts
+
+gen_short_xor:
+	lda rand1
+  	asl
+  	ror rand2
+  	bcc +
+  	eor #$DB
++
+  	asl
+  	ror rand2
+  	bcc +
+  	eor #$DB
++
+  	sta rand1
+  	and #$0F
+  	sta rand0
+  	eor rand2  	
+  	rts
+
+;;;;;
+	lda rand0
+	lsr rand0
+	bcc +
+	eor #$B4
++	rts
+
+populate_rands:
+	lda #00
+	sta seq_cur_entry
+-	ldx seq_cur_entry
+	jsr gen_short_xor
+	lda rand0
+	sta seq0, x
+	inc seq_cur_entry
+	beq +
+	jmp -
++	
+-	ldx seq_cur_entry
+	jsr gen_short_xor
+	lda rand0
+	sta seq1, x
+ 	inc seq_cur_entry
+ 	beq +
+ 	jmp -
++	rts
+
+gen_xor_rands:
+-	ldx seq_cur_entry
+	ror rand0		;Use two numbers
+					;8-bit rand0 (clc to clear rotate bit)
+	bcc +			;Wrap around the last bit
+	lda rand0
+	ora #$80
+	sta rand0
+	;clc
++	ror rand2		;16-bit rand1/rand2
+	ror rand1		
+	bcc + 			;Wrap around the last bit
+	lda rand2
+	ora #$80
+	sta rand2
+	lda rand1		;Update rands with xoring
+	eor #$95
+	sta rand1
+	lda rand2
+	eor #$D2
+	sta rand2	
+	lda rand0
+	eor #$36
+	sta rand0
+
+	lda rand0		;xor the lower 8 bits of our two numbers
+	eor rand1		;store the lowest four bits in rand3
+	and #$0F
+	sta rand3
+	sta seq0, x 	;Store in page 0, next entry
+
+	inc	seq_cur_entry
+	lda seq_cur_entry
+	beq +			;If we've cycled around, go to page 1
+	jmp -
++	;Do page 1
+-	ldx seq_cur_entry
+	ror rand0		;Use two numbers
+	bcc + 			;Wrap around the last bit
+	lda rand0
+	ora #$80
+	sta rand0		;8-bit rand0 (clc to clear rotate bit)
++	;clc
+	ror rand2		;16-bit rand1/rand2
+	ror rand1
+	bcc + 			;Wrap around the last bit
+	lda rand2
+	ora #$80
+	sta rand2		
+
+	lda rand1		;Update rands with xoring
+	eor #$95
+	sta rand1
+	lda rand2
+	eor #$D2
+	ora #$80		
+	sta rand2	
+	lda rand0
+	eor #$36
+	sta rand0
+
+	lda rand0		;xor the lower 8 bits of our two numbers
+	eor rand1		;store the lowest four bits in rand3
+	and #$0F
+	sta rand3
+	sta seq1, x 	;Store in page 0, next entry
+	inc seq_cur_entry
+	lda seq_cur_entry
+	bne - 			;If we've not cycled around, continue
+	lda #00
+	sta seq_cur_entry
+	sta seq_cur_page
+	rts
+
+
 
 generate_rands:
 	;Use multiplier stored from mult0 to mult1
@@ -74,11 +217,11 @@ generate_rands:
 
 	lda rand0			;Mask and get low four bits 
 	and #$0F			; to get random values from 0-15
-	sta (seq0), y 		;Store value in next sequence spot
+	sta seq0, y 		;Store value in next sequence spot
 	iny
-	beq @next			;Did we get to end of page?
+	beq +				;Did we get to end of page?
 	jmp -				; If not repeat for next y 
-@next:
++
 -	tya
 	pha					;Remember current displacement
 	jsr multiply_rand	;First get next rand
@@ -88,7 +231,7 @@ generate_rands:
 
 	lda rand0			;Mask and get low four bits 
 	and #$0F			; to get random values from 0-15
-	sta (seq1), y 		;Store value in next sequence spot
+	sta seq1, y 		;Store value in next sequence spot
 	iny
 	beq @end			;Did we get to end of page?
 	jmp -				; If not repeat for next y 
@@ -108,11 +251,15 @@ multiply_rand:
 	sta ans2
 	sta ans1
 	sta ans0
+	lda mult0	;Store multiplier where it can be rotated
+	sta arg0
+	lda mult1
+	sta arg1
 	ldx #24		;load bit count for multiplier
 --	;Loop
 	lsr #00		;grab next bit of multiplier (but its two high bytes are zero)
-	ror mult1	 
-	ror mult0
+	ror arg1	 
+	ror arg0
 	bcc +	    ;Is there a 1?
 	lda ans0	; Yes. Load up low bit of product
 	clc
@@ -168,7 +315,12 @@ multiply_rand:
 	sta rand1
 	lda ans0
 	sta rand0
-	rts
+	lda rand0
+	cmp #00
+	bne +
+	lda #$FF
+	sta rand0
++	rts
 
 
 mod_arithmetic:
@@ -179,13 +331,13 @@ mod_arithmetic:
 	lda #00		;Modulus is only 4 bytes
 				; so test bytes 4-7 of rand first
 	cmp rand7
-	bne @greater
+	bne +
 	cmp rand6
-	bne @greater
+	bne +
 	cmp rand5
-	bne @greater
+	bne +
 	cmp rand4
-	bne @greater
+	bne +
 
 	sec			;Subtract from low to high byte	
 	lda mod0
@@ -196,9 +348,9 @@ mod_arithmetic:
 	sbc rand2
 	lda mod3
 	sbc rand3
-	bcc @greater ;Check if rand is larger than modulus
+	bcc +		 ;Check if rand is larger than modulus
 	rts 		 ; If not, we're done
-@greater:		 ; If so, subtract modulus from rand 
++				 ; If so, subtract modulus from rand 
 	sec			 ;  using 6 byte subtraction 
     lda rand0
     sbc mod0

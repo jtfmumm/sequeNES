@@ -26,23 +26,7 @@
 ;----------------------------------------------------------------
 
     .base $10000-(PRG_COUNT*$4000)  ;$C000 for one page, $8000 for two pages
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;; INITIAL VALUES ;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;
-	lda #$A7	;Store $41A7 as multiplier (16807);
-	sta $D4 ;mult0
-	lda #$41
-	sta $D5 ;mult1
-	lda #$FF 	;Store $3FFFFFFF as modulus (2^31 - 1)
-	sta $D0 ;mod0
-	lda #$FF
-	sta $D1 ;mod1
-	lda #$FF
-	sta $D2 ;mod2
-	lda #$3F
-	sta $D3 ;mod3
-
+ 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; SCALES/SYSTEMS ;;;;;
@@ -109,15 +93,89 @@ vblankwait2:
     bit $2002
     bpl vblankwait2
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; INITIAL VALUES ;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+    lda #$A7    ;Store $41A7 as multiplier (16807);
+    sta mult0 ;mult0
+    lda #$41
+    sta mult1 ;mult1
+    lda #$FF    ;Store $3FFFFFFF as modulus (2^31 - 1)
+    sta mod0 ;mod0
+    lda #$FF
+    sta mod1 ;mod1
+    lda #$FF
+    sta mod2 ;mod2
+    lda #$3F
+    sta mod3 ;mod3
+
+    lda #$A4    ;Load a seed into the random number generator
+    sta rand0
+    lda #$5B
+    sta rand1
+    lda #$23 
+    sta rand2
+
+    lda #00             ;Initialize pointers 
+    sta seq_cur_entry
+    sta seq_cur_page
+
+;INITIALIZE MEMORY
+    ldx #00
+    lda #00             ;Let's start with some note values
+    sta $00E6, x
+    lda #02
+    inx
+    sta $00E6, x
+    lda #04
+    inx
+    sta note0, x
+    lda #07
+    inx
+    sta note0, x
+    lda #09
+    sta note4
+    lda #11
+    sta note5
+    lda #14
+    sta note6
+    lda #11
+    sta note7
+    lda #09
+    sta note8
+    lda #08
+    sta note9
+    lda #07
+    sta noteA
+    lda #06
+    sta noteB
+    lda #05
+    sta noteC
+    lda #04
+    sta noteD
+    lda #03
+    sta noteE
+    lda #02
+    sta noteF
+
+
     jsr load_palette
     jsr init_sprites
     jsr load_sprites
     jsr load_background
     jsr load_attribute
     ;jsr test_audio
-    jsr generate_rands
+    
+    ;jsr generate_rands
+    ;jsr gen_xor_rands
+    ;jsr get_next_seq
+    ;jsr quick_seq
+    jsr gen_short_xor
+    jsr populate_rands
     jsr get_next_seq
     jsr play_seq
+
+    ;jsr play_notes
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;; MAIN LOOP ;;;;;;;
@@ -185,20 +243,64 @@ IRQ:
 
 
 ;;;;MY SUBROUTINES
-play_seq:
-    lda #%00000001
+play_notes:
+    lda #%01000001
     sta $4015 ;enable square 1
+test = $30
+    ;lda #$0D
+    ;sta note0
+-   ldx seq_cur_entry
+    ldy note0, x
+    ;ldy seq0, x
+    tya
+    pha
+    lda c_range, y      ;A2.  #A2 will evaluate to #$0C
+    asl a               ;multiply by 2 because we are indexing into a table of words
+    tay
+    lda note_table, y   ;read the low byte of the period
+    sta $4002           ;write to SQ1_LO
+    lda note_table+1, y ;read the high byte of the period
+    sta $4003           ;write to SQ1_HI
+    ;inx
+    ;txa
+    ;sec
+    ;sbc 
+    lda #01
+    sta arg0
+    txa
+    pha
+    jsr rep_delay
+    pla 
+    tax
+    inc seq_cur_entry   
+    pla
+    tay
+    iny
+    lda seq_cur_entry
+    sec
+    sbc #16
+    bne +
+    sta seq_cur_entry
++   jmp -
+
+play_seq:
+    lda #%01000001
+    sta $4015 ;enable triangle 1
  
     lda #%10110011 ;Duty 10, Volume F
     sta $4000
     ldy #00 	;Initialize current note
 
--   lda #$03
-	sta this_note
+-   ldx seq_cur_entry		;;;WORK ON THIS!!!!
+	lda note0, x
+    sta this_note
 	jsr play_note
-    lda #01
+    lda #02
     sta arg0
     jsr rep_delay
+    jmp -
+
+
     ldx #$05
 	lda c_range, x      ;A2.  #A2 will evaluate to #$0C
     asl a               ;multiply by 2 because we are indexing into a table of words
@@ -210,6 +312,7 @@ play_seq:
     lda #01
     sta arg0
     jsr rep_delay
+    ;jsr 
     jsr -
     rts	
 
