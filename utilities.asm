@@ -17,18 +17,148 @@ play_note:
     sta $4002           ;write to SQ1_LO
     lda note_table+1, y ;read the high byte of the period
     sta $4003           ;write to SQ1_HI
-    inc seq_cur_entry
-    lda seq_cur_entry	;Check for wraparound at 16
+    inc rand_cur_entry
+    lda rand_cur_entry	;Check for wraparound at 16
     sec
     sbc #16
     bne +
-    sta seq_cur_entry
+    sta rand_cur_entry
 +   rts
+
+move_up:
+	;Move box
+    lda $0200       ; load sprite Y position
+    sec             
+    sbc #$08        ; A = A - 1
+    sta $0200       ; save sprite Y position
+    ;Change note
+    ldx cur_box
+    inc note0, x
+    lda note0, x
+	sec
+	sbc #16 		;There are only 16 notes
+	bne +
+	lda #00 		;Wraparound to bottom
+	sta note0, x
+	lda $0200 		;Now wrap box!
+	sec
+	sbc #128
+	sta $0200
++   rts
+
+move_down:
+	;Move box
+    lda $0200       ; load sprite Y position
+    clc             
+    adc #$08        ; A = A + 1
+    sta $0200       ; save sprite Y position
+    ;Change note
+    ldx cur_box
+    dec note0, x
+    lda note0, x
+	bpl +			;Did we go under?
+	lda #15 		;Wraparound to top
+	sta note0, x
+	lda $0200 		;Now wrap box!
+	clc
+	adc #128
+	sta $0200
++   rts
+    
+move_right:
+	inc cur_box
+	lda cur_box
+	sec
+	sbc #16 		;There are only 16 boxes
+	bne +
+	lda #00 		;Wraparound screen
+	sta cur_box
++	rts
+ 
+move_left:
+	dec cur_box
+	lda cur_box
+	bpl + 			;Are we still 0 or above?
+	lda #15 		;Wraparound screen
+	sta cur_box
++	rts
+
+load_sequence:
+	ldy #00 			;Countdown steps
+-	ldx cur_seq_loader  ;Current step
+	lda sequences, x
+	sta note0, y
+	inc cur_seq_loader
+	iny
+	tya
+	sec
+	sbc #16
+	bne -
+	lda cur_seq_loader
+	sec
+	sbc #$50 			;Check for end of banks
+	bne +
+	lda #00
+	sta cur_seq_loader
++	rts
+
+change_tempo:
+	inc cur_tempo
+	lda cur_tempo
+	sec
+	sbc #04			;Subtract length of tempi table
+	bne +
+	lda #00
+	sta cur_tempo
++	ldx cur_tempo
+    lda tempi, x
+    sta song_tempo      ;The value used to calculate tempo
+	rts
+
+invert_retrogress:
+	lda inv_ret
+	bne + ;@retrogress
+@invert:
+	ldx #16
+-	lda #15 		;Our values range from 0-15	
+	sec 			; so subtract from 15 to get
+	sbc note0, x 	; inversion (around a center line)
+	sta note0, x
+	dex
+	bne - 
+	lda #15
+	sec 			; do it one last time on 0
+	sbc note0, x 	
+	sta note0, x
+	jmp ++ ;@done
++ ;@retrogress:
+	ldx #07 		;Start from middle and work out
+	ldy #08 		; swapping as you go 
+-	lda note0, x
+	sta arg0
+	lda note0, y
+	sta note0, x
+	lda arg0
+	sta note0, y
+	iny
+	dex
+	bne -			;On 0, swap one more time, then return
+	lda note0, x
+	sta arg0
+	lda note0, y
+	sta note0, x
+	lda arg0
+	sta note0, y
+++ ;@done:
+	lda inv_ret
+	eor #$01
+	sta inv_ret
+	rts
 
 quick_seq:
 	ldx #08
 	ldy #00
--	lda seq0, y
+-	lda rand_seq0, y
 	sta note0, y
 	iny
 	dex
@@ -38,45 +168,45 @@ quick_seq:
 get_next_seq:
 	ldx #16 					;Keep track of how many steps are left
 	ldy #00 					;Keep track of where in the 16-note seq we are
--	lda #00
-	cmp seq_cur_page			;Which page are we taking our notes from?
-	bne +						;If page 1, go there
+@loop:
+	lda #00
+	cmp rand_cur_page			;Which page are we taking our notes from?
+	bne @page1						;If page 1, go there
 	txa							;Preserve our x
 	pha
-	ldx seq_cur_entry		    
-	lda seq0, x					;Load the value of page 0 plus our current entry
+	ldx rand_cur_entry		    
+	lda rand_seq0, x					;Load the value of page 0 plus our current entry
 	sta note0, y 				;Store it in the next seq spot
 	pla 						;Get our x back
 	tax
 	iny
-	inc seq_cur_entry			;Did we move to the end of the page?
-	sec 						;Check for wraparound at 16
-	sbc #16
-	beq ++
+	inc rand_cur_entry			;Did we move to the end of the page?
+	lda rand_cur_entry
+							;Check for wraparound
+	beq @switch_page
 	dex
-	bne -						;Do we have steps left?
+	bne @loop						;Do we have steps left?
 	rts
-+   txa
+@page1:
+    txa
 	pha
-	ldx seq_cur_entry
-	lda seq1, x				 	;See above comments
+	ldx rand_cur_entry
+	lda rand_seq1, x				 	;See above comments
 	sta note0, y
 	pla							;Get our x back
 	tax
 	iny
-	inc seq_cur_entry
-	sec
-	sbc #16
-	beq ++
+	inc rand_cur_entry
+	beq @switch_page
 	dex
-	bne -
+	bne @loop
 	rts
-++  ;Switch page
+@switch_page:  
 	lda #00
-	sta seq_cur_entry
-	lda seq_cur_page			;Use eor to toggle page betw 0 and 1
+	sta rand_cur_entry
+	lda rand_cur_page			;Use eor to toggle page betw 0 and 1
 	eor #$01
-	sta seq_cur_page
+	sta rand_cur_page
 	dex							;Check to see if we have steps left
 	cpx #00
 	bne -						
@@ -109,26 +239,26 @@ gen_short_xor:
 
 populate_rands:
 	lda #00
-	sta seq_cur_entry
--	ldx seq_cur_entry
+	sta rand_cur_entry
+-	ldx rand_cur_entry
 	jsr gen_short_xor
 	lda rand0
-	sta seq0, x
-	inc seq_cur_entry
+	sta rand_seq0, x
+	inc rand_cur_entry
 	beq +
 	jmp -
 +	
--	ldx seq_cur_entry
+-	ldx rand_cur_entry
 	jsr gen_short_xor
 	lda rand0
-	sta seq1, x
- 	inc seq_cur_entry
+	sta rand_seq1, x
+ 	inc rand_cur_entry
  	beq +
  	jmp -
 +	rts
 
 gen_xor_rands:
--	ldx seq_cur_entry
+-	ldx rand_cur_entry
 	ror rand0		;Use two numbers
 					;8-bit rand0 (clc to clear rotate bit)
 	bcc +			;Wrap around the last bit
@@ -156,14 +286,14 @@ gen_xor_rands:
 	eor rand1		;store the lowest four bits in rand3
 	and #$0F
 	sta rand3
-	sta seq0, x 	;Store in page 0, next entry
+	sta rand_seq0, x 	;Store in page 0, next entry
 
-	inc	seq_cur_entry
-	lda seq_cur_entry
+	inc	rand_cur_entry
+	lda rand_cur_entry
 	beq +			;If we've cycled around, go to page 1
 	jmp -
 +	;Do page 1
--	ldx seq_cur_entry
+-	ldx rand_cur_entry
 	ror rand0		;Use two numbers
 	bcc + 			;Wrap around the last bit
 	lda rand0
@@ -192,20 +322,20 @@ gen_xor_rands:
 	eor rand1		;store the lowest four bits in rand3
 	and #$0F
 	sta rand3
-	sta seq1, x 	;Store in page 0, next entry
-	inc seq_cur_entry
-	lda seq_cur_entry
+	sta rand_seq1, x 	;Store in page 0, next entry
+	inc rand_cur_entry
+	lda rand_cur_entry
 	bne - 			;If we've not cycled around, continue
 	lda #00
-	sta seq_cur_entry
-	sta seq_cur_page
+	sta rand_cur_entry
+	sta rand_cur_page
 	rts
 
 
 
 generate_rands:
 	;Use multiplier stored from mult0 to mult1
-	;Sequence begins at seq0 and goes to seq1 (those are pages)
+	;Sequence begins at rand_seq0 and goes to rand_seq1 (those are pages)
 	ldy #00				;Displacement from sequence start
 
 -	tya
@@ -217,7 +347,7 @@ generate_rands:
 
 	lda rand0			;Mask and get low four bits 
 	and #$0F			; to get random values from 0-15
-	sta seq0, y 		;Store value in next sequence spot
+	sta rand_seq0, y 		;Store value in next sequence spot
 	iny
 	beq +				;Did we get to end of page?
 	jmp -				; If not repeat for next y 
@@ -231,7 +361,7 @@ generate_rands:
 
 	lda rand0			;Mask and get low four bits 
 	and #$0F			; to get random values from 0-15
-	sta seq1, y 		;Store value in next sequence spot
+	sta rand_seq1, y 		;Store value in next sequence spot
 	iny
 	beq @end			;Did we get to end of page?
 	jmp -				; If not repeat for next y 
@@ -378,3 +508,27 @@ mod_arithmetic:
     sta rand7
     jmp mod_arithmetic	;Make sure we're now in range
 
+
+delay:
+    ;255^3 cycles is roughly 1 second (92.5%)... 1,789,772 cycles is one second
+    ldx #$FF
+    ldy #$FF
+-   dex
+    beq +    ;Is X zero?  Go to y counter
+    jmp -
++   dey
+    beq +    ;Is Y zero? Go to end
+    jmp -    ;Otherwise cycle through x again
++   rts
+
+rep_delay:
+    ;arg0=count
+    lda arg0
+-   pha 
+    jsr delay
+    pla
+    tax
+    dex 
+    txa
+    bne -
+    rts

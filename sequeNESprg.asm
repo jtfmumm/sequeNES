@@ -44,6 +44,16 @@
 c_range:
 	.db C3, D3, E3, F3, G3, A3, B3, C4, D4, E4, F4, G4, A4, B4, C5, D5
 
+sequences:
+    .db $00,$03,$00,$04,$00,$07,$06,$07,$06,$02,$03,$02,$03,$04,$07,$09 
+    .db $00,$04,$07,$0B,$0E,$0B,$07,$04,$00,$01,$05,$07,$09,$0C,$07,$05 
+    .db $00,$00,$05,$07,$09,$00,$05,$02,$05,$02,$07,$09,$0B,$02,$07,$04 
+    .db $00,$01,$02,$03,$01,$02,$03,$04,$05,$0B,$0A,$09,$08,$07,$06,$04 
+    .db $00,$02,$04,$07,$09,$0B,$0E,$00,$0E,$0B,$09,$07,$04,$02,$00,$0E 
+
+tempi:
+    .db $25,$20,$1B,$0B,$08
+
 
 ;    .org $C000
 
@@ -116,68 +126,43 @@ vblankwait2:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; INITIAL VALUES ;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
-;     lda #$A7    ;Store $41A7 as multiplier (16807);
-;     sta mult0 ;mult0
-;     lda #$41
-;     sta mult1 ;mult1
-;     lda #$FF    ;Store $3FFFFFFF as modulus (2^31 - 1)
-;     sta mod0 ;mod0
-;     lda #$FF
-;     sta mod1 ;mod1
-;     lda #$FF
-;     sta mod2 ;mod2
-;     lda #$3F
-;     sta mod3 ;mod3
+    lda #$A7    ;Store $41A7 as multiplier (16807);
+    sta mult0 ;mult0
+    lda #$41
+    sta mult1 ;mult1
+    lda #$FF    ;Store $3FFFFFFF as modulus (2^31 - 1)
+    sta mod0 ;mod0
+    lda #$FF
+    sta mod1 ;mod1
+    lda #$FF
+    sta mod2 ;mod2
+    lda #$3F
+    sta mod3 ;mod3
 
-;     lda #$A4    ;Load a seed into the random number generator
-;     sta rand0
-;     lda #$5B
-;     sta rand1
-;     lda #$23 
-;     sta rand2
+    lda #$A4    ;Load a seed into the random number generator
+    sta rand0
+    lda #$5B
+    sta rand1
+    lda #$23 
+    sta rand2
 
-;     lda #00             ;Initialize pointers 
-;     sta seq_cur_entry
-;     sta seq_cur_page
+    lda #00
+    sta seeding     ;Start seeding
 
-; ;INITIALIZE MEMORY
-;     ldx #00
-;     lda #00             ;Let's start with some note values
-;     sta $00E6, x
-;     lda #02
-;     inx
-;     sta $00E6, x
-;     lda #04
-;     inx
-;     sta note0, x
-;     lda #07
-;     inx
-;     sta note0, x
-;     lda #09
-;     sta note4
-;     lda #11
-;     sta note5
-;     lda #14
-;     sta note6
-;     lda #11
-;     sta note7
-;     lda #09
-;     sta note8
-;     lda #08
-;     sta note9
-;     lda #07
-;     sta noteA
-;     lda #06
-;     sta noteB
-;     lda #05
-;     sta noteC
-;     lda #04
-;     sta noteD
-;     lda #03
-;     sta noteE
-;     lda #02
-;     sta noteF
+    lda #00             ;Initialize pointers 
+    sta rand_cur_entry
+    sta rand_cur_page
+    sta cur_note        ;Our spot in the 16 note sequence
+    sta cur_seq_loader  ;Current spot in preprogrammed sequences
 
+    lda #02
+    sta cur_tempo       ;Start at entry 3 in tempi table
+    ldx cur_tempo
+    lda tempi, x
+    sta song_tempo      ;The value used to calculate tempo
+
+    lda #07             ;
+    sta cur_box
 
     jsr load_palette
     jsr init_sprites
@@ -186,18 +171,23 @@ vblankwait2:
     jsr load_attribute
     
     ;jsr test_audio
-    
-    ;jsr generate_rands
-    ;jsr gen_xor_rands
-    ;jsr get_next_seq
-    ;jsr quick_seq
+seed_it:
+    lda seeding             ;This is wasteful.. move this to first screen logic
+    bne +
+    jsr read_joypad
+@check_start
+    lda joypad1_pressed
+    and #$10
+    beq @keep_seeding
+    jsr sound_load
+    lda #01
+    sta seeding
+@keep_seeding
+    jsr gen_short_xor
+    jmp seed_it
  
-    ; jsr gen_short_xor
-    ; jsr populate_rands
-    ; jsr get_next_seq
-    ; jsr play_seq
-
-    ;jsr play_notes
++   jsr populate_rands
+    jsr get_next_seq
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;; MAIN LOOP ;;;;;;;
@@ -209,8 +199,9 @@ forever:
     bne - ;wait for NMI to clear the sleeping flag and wake us up
     
     ;when NMI wakes us up, handle input, fill the drawing buffer and go back to sleep
-    jsr read_joypad
++   jsr read_joypad
     jsr handle_input
+    jsr sound_play_frame
     ;jsr prepare_dbuffer
     jmp forever ;go back to sleep
 
@@ -281,47 +272,48 @@ handle_input:
     lda joypad1_pressed
     and #$80
     beq @check_B
-    jsr sound_load
+    jsr load_sequence
 @check_B:
     lda joypad1_pressed
     and #$40
     beq @check_select
-    jsr sound_init
+    jsr invert_retrogress
 @check_select:
     lda joypad1_pressed
     and #$20
     beq @check_start
-    jsr +
+    jsr get_next_seq
 @check_start:
     lda joypad1_pressed
     and #$10
     beq @check_up
-    jsr get_next_seq
+    jsr sound_load
 @check_up:
     lda joypad1_pressed
     and #$08
     beq @check_down
-    jsr +;move_up
+    jsr move_up
 @check_down:
     lda joypad1_pressed
     and #$04
     beq @check_left
-    jsr +;move_down
+    jsr move_down
 @check_left:
     lda joypad1_pressed
     and #$02
     beq @check_right
-    jsr +
+    jsr move_left
 @check_right:
     lda joypad1_pressed
     and #$01
     beq +
-    jsr +
+    jsr move_right
 +
     rts
     
       
 ;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -331,29 +323,6 @@ IRQ:
    rti
 
 
-delay:
-    ;255^3 cycles is roughly 1 second (92.5%)... 1,789,772 cycles is one second
-    ldx #$FF
-    ldy #$FF
--   dex
-    beq +    ;Is X zero?  Go to y counter
-    jmp -
-+   dey
-    beq +    ;Is Y zero? Go to end
-    jmp -    ;Otherwise cycle through x again
-+   rts
-
-rep_delay:
-    ;arg0=count
-    lda arg0
--   pha 
-    jsr delay
-    pla
-    tax
-    dex 
-    txa
-    bne -
-    rts
 
 ;Background
 background:
@@ -375,30 +344,6 @@ background:
 
 
 ;BORROWED SUBROUTINES
-test_audio:
-    lda #%00000001
-    sta $4015 ;enable square 1
- 
-    lda #%10110011 ;Duty 10, Volume F
-    sta $4000
-
--   lda #$1B    ;0C9 is a C# in NTSC mode
-    sta $4002
-    lda #$00
-    sta $4003
-    lda #01
-    sta arg0
-    jsr rep_delay
-    lda #$22
-    sta $4002
-    lda #$00
-    sta $4003
-    lda #01
-    sta arg0
-    jsr rep_delay
-    jsr -
-    rts
-
 load_palette:
     lda $2002    ; read PPU status to reset the high/low latch
     lda #$3F
@@ -433,6 +378,10 @@ init_sprites:
     lda #$80
     sta $0200        ; put sprite 0 in center ($80) of screen vert
     sta $0203        ; put sprite 0 in center ($80) of screen horiz
+    ;sta $0204
+    ;lda #$90
+    ;sta $0207
+
     lda #$00
     sta $0201        ; tile number = 0
     sta $0202        ; color = 0, no flipping

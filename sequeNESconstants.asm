@@ -1,6 +1,6 @@
 ;;Only put constants here.
 ;;We have not started a bank yet, so we cannot start the program itself
-;;No opcodes
+;;No opcodes 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Arguments for subroutines ;;
@@ -65,13 +65,22 @@ noteC = $F2
 noteD = $F3
 noteE = $F4
 noteF = $F5
-seq_cur_page = $F6
-seq_cur_entry = $F7
+rand_cur_page = $F6
+rand_cur_entry = $F7
+cur_note = $F8
+inv_ret = $F9		;Keep track of whether we invert (0) or retrogress (1) next
+cur_tempo = $FA		;Keep track of place in tempi table
+song_tempo = $FB	;The current value used to set tempo in sound engine 
+cur_seq_loader = $FC  ;Preprogrammed seqs
+cur_box = $FD		;What box are we editing? 0-15
 
-seq0 = $0600
-seq1 = $0700
+seeding = $FE		;A flag for seeding... set it to 1 to stop seeding
+
+rand_seq0 = $0600
+rand_seq1 = $0700
 
 this_note = $00
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;
