@@ -19,6 +19,7 @@ MIRRORING = %0001 ;%0000 = horizontal, %0001 = vertical, %1000 = four-screen
 .include "sequeNESconstants.asm"
 .include "sequeNESprg.asm"
 .include "utilities.asm"
+.include "sound_engine.asm"
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; interrupt vectors ;;

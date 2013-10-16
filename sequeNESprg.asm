@@ -4,7 +4,16 @@
 ; variables
 ;----------------------------------------------------------------
 
-   .enum $0000
+    .enum $0000
+
+    joypad1 .dsb 1           ;button states for the current frame
+    joypad1_old .dsb 1       ;last frame's button states
+    joypad1_pressed .dsb 1   ;current frame's off_to_on transitions
+    sleeping .dsb 1          ;main program sets this and waits for the NMI to clear it.  Ensures the main program is run only once per frame.  
+                        ;   for more information, see Disch's document: http://nesdevhandbook.googlepages.com/theframe.html
+    ;needdraw .rs 1          ;drawing flag.
+    ;dbuffer_index .rs 1     ;current position in the drawing buffer
+    ptr1 .dsb 2              ;a pointer
 
    ;NOTE: declare variables using the DSB and DSW directives, like this:
 
@@ -93,70 +102,81 @@ vblankwait2:
     bit $2002
     bpl vblankwait2
 
+;Enable sound channels
+    jsr sound_init
+    
+    ;jsr sound_load
+    
+    lda #$88
+    sta $2000   ;enable NMIs
+    lda #$18
+    sta $2001   ;turn PPU on
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; INITIAL VALUES ;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
-    lda #$A7    ;Store $41A7 as multiplier (16807);
-    sta mult0 ;mult0
-    lda #$41
-    sta mult1 ;mult1
-    lda #$FF    ;Store $3FFFFFFF as modulus (2^31 - 1)
-    sta mod0 ;mod0
-    lda #$FF
-    sta mod1 ;mod1
-    lda #$FF
-    sta mod2 ;mod2
-    lda #$3F
-    sta mod3 ;mod3
+;     lda #$A7    ;Store $41A7 as multiplier (16807);
+;     sta mult0 ;mult0
+;     lda #$41
+;     sta mult1 ;mult1
+;     lda #$FF    ;Store $3FFFFFFF as modulus (2^31 - 1)
+;     sta mod0 ;mod0
+;     lda #$FF
+;     sta mod1 ;mod1
+;     lda #$FF
+;     sta mod2 ;mod2
+;     lda #$3F
+;     sta mod3 ;mod3
 
-    lda #$A4    ;Load a seed into the random number generator
-    sta rand0
-    lda #$5B
-    sta rand1
-    lda #$23 
-    sta rand2
+;     lda #$A4    ;Load a seed into the random number generator
+;     sta rand0
+;     lda #$5B
+;     sta rand1
+;     lda #$23 
+;     sta rand2
 
-    lda #00             ;Initialize pointers 
-    sta seq_cur_entry
-    sta seq_cur_page
+;     lda #00             ;Initialize pointers 
+;     sta seq_cur_entry
+;     sta seq_cur_page
 
-;INITIALIZE MEMORY
-    ldx #00
-    lda #00             ;Let's start with some note values
-    sta $00E6, x
-    lda #02
-    inx
-    sta $00E6, x
-    lda #04
-    inx
-    sta note0, x
-    lda #07
-    inx
-    sta note0, x
-    lda #09
-    sta note4
-    lda #11
-    sta note5
-    lda #14
-    sta note6
-    lda #11
-    sta note7
-    lda #09
-    sta note8
-    lda #08
-    sta note9
-    lda #07
-    sta noteA
-    lda #06
-    sta noteB
-    lda #05
-    sta noteC
-    lda #04
-    sta noteD
-    lda #03
-    sta noteE
-    lda #02
-    sta noteF
+; ;INITIALIZE MEMORY
+;     ldx #00
+;     lda #00             ;Let's start with some note values
+;     sta $00E6, x
+;     lda #02
+;     inx
+;     sta $00E6, x
+;     lda #04
+;     inx
+;     sta note0, x
+;     lda #07
+;     inx
+;     sta note0, x
+;     lda #09
+;     sta note4
+;     lda #11
+;     sta note5
+;     lda #14
+;     sta note6
+;     lda #11
+;     sta note7
+;     lda #09
+;     sta note8
+;     lda #08
+;     sta note9
+;     lda #07
+;     sta noteA
+;     lda #06
+;     sta noteB
+;     lda #05
+;     sta noteC
+;     lda #04
+;     sta noteD
+;     lda #03
+;     sta noteE
+;     lda #02
+;     sta noteF
 
 
     jsr load_palette
@@ -170,10 +190,11 @@ vblankwait2:
     ;jsr gen_xor_rands
     ;jsr get_next_seq
     ;jsr quick_seq
-    jsr gen_short_xor
-    jsr populate_rands
-    jsr get_next_seq
-    jsr play_seq
+ 
+    ; jsr gen_short_xor
+    ; jsr populate_rands
+    ; jsr get_next_seq
+    ; jsr play_seq
 
     ;jsr play_notes
 
@@ -181,7 +202,17 @@ vblankwait2:
 ;;;;;; MAIN LOOP ;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
 forever:
-    jmp forever
+    inc sleeping ;go to sleep (wait for NMI).
+-
+    lda sleeping
+    bne - ;wait for NMI to clear the sleeping flag and wake us up
+    
+    ;when NMI wakes us up, handle input, fill the drawing buffer and go back to sleep
+    jsr read_joypad
+    jsr handle_input
+    ;jsr prepare_dbuffer
+    jmp forever ;go back to sleep
+
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -189,50 +220,106 @@ forever:
 ;;;;;;;;NMI;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
 NMI:
+    pha     ;save registers
+    txa
+    pha
+    tya
+    pha
+
     lda #$00
     sta $2003  ; set the low byte (00) of the RAM address
     lda #$02
     sta $4014  ; set the high byte (02) of the RAM address, start the transfer
 
-latch_controller:
-    LDA #$01
-    STA $4016
-    LDA #$00
-    STA $4016       ; tell both the controllers to latch buttons
+    lda #$00
+    sta sleeping            ;wake up the main program
 
-read_a: 
-    LDA $4016       ; player 1 - A
-    AND #%00000001  ; only look at bit 0
-    BEQ read_a_done   ; branch to ReadADone if button is NOT pressed (0)
-                  ; add instructions here to do something when button IS pressed (1)
-    LDA $0203       ; load sprite X position
-    CLC             ; make sure the carry flag is clear
-    ADC #$01        ; A = A + 1
-    STA $0203       ; save sprite X position
-read_a_done:        ; handling this button is done
-  
+    jsr sound_play_frame
+    
+    pla     ;restore registers
+    tay
+    pla
+    tax
+    pla
+    rti
 
-read_b: 
-    LDA $4016       ; player 1 - B
-    AND #%00000001  ; only look at bit 0
-    BEQ read_b_done   ; branch to ReadBDone if button is NOT pressed (0)
-                  ; add instructions here to do something when button IS pressed (1)
-    LDA $0203       ; load sprite X position
-    SEC             ; make sure carry flag is set
-    SBC #$01        ; A = A - 1
-    STA $0203       ; save sprite X position
-read_b_done:        ; handling this button is done
+;----------------------------
+; read_joypad will capture the current button state and store it in joypad1.  
+;       Off-to-on transitions will be stored in joypad1_pressed
+read_joypad:
+    lda joypad1
+    sta joypad1_old ;save last frame's joypad button states
+    
+    lda #$01
+    sta $4016
+    lda #$00
+    sta $4016
+    
+    ldx #$08
+@loop:    
+    lda $4016
+    lsr a
+    rol joypad1  ;A, B, select, start, up, down, left, right
+    dex
+    bne @loop
+    
+    lda joypad1_old ;what was pressed last frame.  EOR to flip all the bits to find ...
+    eor #$FF    ;what was not pressed last frame
+    and joypad1 ;what is pressed this frame
+    sta joypad1_pressed ;stores off-to-on transitions
+    
+    rts
 
-    ;;This is the PPU clean up section, so rendering the next frame starts properly.
-    lda #%10010000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
-    sta $2000
-    lda #%00011110   ; enable sprites, enable background, no clipping on left side
-    sta $2001
-    lda #$00        ;;tell the ppu there is no background scrolling
-    sta $2005
-    sta $2005
-
-    rti        
+;---------------------
+; handle_input will perform actions based on input:
+;   A - play sound
+;   B - init sound engine
+;   Start - disable sound engine
+handle_input:
+@check_A:
+    lda joypad1_pressed
+    and #$80
+    beq @check_B
+    jsr +
+@check_B:
+    lda joypad1_pressed
+    and #$40
+    beq @check_select
+    jsr +
+@check_select:
+    lda joypad1_pressed
+    and #$20
+    beq @check_start
+    jsr +
+@check_start:
+    lda joypad1_pressed
+    and #$10
+    beq @check_up
+    jsr get_next_seq
+@check_up:
+    lda joypad1_pressed
+    and #$08
+    beq @check_down
+    jsr +;move_up
+@check_down:
+    lda joypad1_pressed
+    and #$04
+    beq @check_left
+    jsr +;move_down
+@check_left:
+    lda joypad1_pressed
+    and #$02
+    beq @check_right
+    jsr +
+@check_right:
+    lda joypad1_pressed
+    and #$01
+    beq +
+    jsr +
++
+    rts
+    
+      
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -240,7 +327,7 @@ read_b_done:        ; handling this button is done
 IRQ:
 
    ;NOTE: IRQ code goes here
-
+   rti
 
 ;;;;MY SUBROUTINES
 play_notes:
@@ -494,3 +581,45 @@ note_table:
     .word $001A, $0018, $0017, $0015, $0014, $0013, $0012, $0011, $0010, $000F, $000E, $000D ; C8-B8 ($4B-$56)
     .word $000C, $000C, $000B, $000A, $000A, $0009, $0008                                    ; C9-F#9 ($57-$5D)
 
+
+
+
+latch_controller:
+    LDA #$01
+    STA $4016
+    LDA #$00
+    STA $4016       ; tell both the controllers to latch buttons
+
+read_a: 
+    LDA $4016       ; player 1 - A
+    AND #%00000001  ; only look at bit 0
+    BEQ read_a_done   ; branch to ReadADone if button is NOT pressed (0)
+                  ; add instructions here to do something when button IS pressed (1)
+    LDA $0203       ; load sprite X position
+    CLC             ; make sure the carry flag is clear
+    ADC #$01        ; A = A + 1
+    STA $0203       ; save sprite X position
+read_a_done:        ; handling this button is done
+  
+
+read_b: 
+    LDA $4016       ; player 1 - B
+    AND #%00000001  ; only look at bit 0
+    BEQ read_b_done   ; branch to ReadBDone if button is NOT pressed (0)
+                  ; add instructions here to do something when button IS pressed (1)
+    LDA $0203       ; load sprite X position
+    SEC             ; make sure carry flag is set
+    SBC #$01        ; A = A - 1
+    STA $0203       ; save sprite X position
+read_b_done:        ; handling this button is done
+
+    ;;This is the PPU clean up section, so rendering the next frame starts properly.
+    lda #%10010000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+    sta $2000
+    lda #%00011110   ; enable sprites, enable background, no clipping on left side
+    sta $2001
+    lda #$00        ;;tell the ppu there is no background scrolling
+    sta $2005
+    sta $2005
+
+    rti        
