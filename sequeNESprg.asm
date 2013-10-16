@@ -184,6 +184,7 @@ vblankwait2:
     jsr load_sprites
     jsr load_background
     jsr load_attribute
+    
     ;jsr test_audio
     
     ;jsr generate_rands
@@ -280,12 +281,12 @@ handle_input:
     lda joypad1_pressed
     and #$80
     beq @check_B
-    jsr +
+    jsr sound_load
 @check_B:
     lda joypad1_pressed
     and #$40
     beq @check_select
-    jsr +
+    jsr sound_init
 @check_select:
     lda joypad1_pressed
     and #$20
@@ -329,79 +330,6 @@ IRQ:
    ;NOTE: IRQ code goes here
    rti
 
-;;;;MY SUBROUTINES
-play_notes:
-    lda #%01000001
-    sta $4015 ;enable square 1
-test = $30
-    ;lda #$0D
-    ;sta note0
--   ldx seq_cur_entry
-    ldy note0, x
-    ;ldy seq0, x
-    tya
-    pha
-    lda c_range, y      ;A2.  #A2 will evaluate to #$0C
-    asl a               ;multiply by 2 because we are indexing into a table of words
-    tay
-    lda note_table, y   ;read the low byte of the period
-    sta $4002           ;write to SQ1_LO
-    lda note_table+1, y ;read the high byte of the period
-    sta $4003           ;write to SQ1_HI
-    ;inx
-    ;txa
-    ;sec
-    ;sbc 
-    lda #01
-    sta arg0
-    txa
-    pha
-    jsr rep_delay
-    pla 
-    tax
-    inc seq_cur_entry   
-    pla
-    tay
-    iny
-    lda seq_cur_entry
-    sec
-    sbc #16
-    bne +
-    sta seq_cur_entry
-+   jmp -
-
-play_seq:
-    lda #%01000001
-    sta $4015 ;enable triangle 1
- 
-    lda #%10110011 ;Duty 10, Volume F
-    sta $4000
-    ldy #00 	;Initialize current note
-
--   ldx seq_cur_entry		;;;WORK ON THIS!!!!
-	lda note0, x
-    sta this_note
-	jsr play_note
-    lda #02
-    sta arg0
-    jsr rep_delay
-    jmp -
-
-
-    ldx #$05
-	lda c_range, x      ;A2.  #A2 will evaluate to #$0C
-    asl a               ;multiply by 2 because we are indexing into a table of words
-    tay
-    lda note_table, y   ;read the low byte of the period
-    sta $4002           ;write to SQ1_LO
-    lda note_table+1, y ;read the high byte of the period
-    sta $4003           ;write to SQ1_HI
-    lda #01
-    sta arg0
-    jsr rep_delay
-    ;jsr 
-    jsr -
-    rts	
 
 delay:
     ;255^3 cycles is roughly 1 second (92.5%)... 1,789,772 cycles is one second
