@@ -35,7 +35,7 @@ MIRRORING = %0001 ;%0000 = horizontal, %0001 = vertical, %1000 = four-screen
 ;;;;;;; CHR-ROM ;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;
 
-;   .incbin "mario.chr"
+   .incbin "sequeNESchr.asm"
 
 
 

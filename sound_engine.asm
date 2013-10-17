@@ -56,8 +56,15 @@ sound_play_frame:
     bne ++   ;only take action once every 8 frames.
     
     lda cur_note
+    ldy phrase_length   ;Are we at an 8 or 16 note phrase?
+    cpy #08
+    bne @sixteen
+@eight:
+    and #$07
+    jmp +
+@sixteen:
     and #$0F        ;Mask down to low 16
-    tay
++   tay
     lda note0, y
     cmp #15         ;Is our note silence?
     bne @note       ; If not, play a note
@@ -67,14 +74,14 @@ sound_play_frame:
     jmp reset_frame_counter
   ;;;;;Then play silence     ; Then move on.
 @note:  
-    tay                 ;Store note in y for c_range      
+    tay                 ;Store note in y for cur_scale      
     lda sound_enable    ;Is sound disabled?
     beq +
     lda #$0F            ; then re-enable
     sta $4015
     lda #00
     sta sound_enable
-+   lda c_range, y
++   lda cur_scale0, y
     asl a       ;multiply by 2, because our note table is stored as words
     tay         ;we'll use this as an index into the note table
     
@@ -89,7 +96,7 @@ sound_play_frame:
     
     ;inc sfx_index   ;move our index to the next byte position in the data stream
 reset_frame_counter:
-    inc cur_note    ;Move to next of our 16 notes
+    inc cur_note    ;Move to next of our phrase_length notes
     lda #$00
     sta sound_frame_counter ;reset frame counter so we can start counting to 8 again.    
 ++ ;@done:

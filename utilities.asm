@@ -8,29 +8,45 @@
 
 .org $D000
 
-play_note:
-	ldx this_note
-	lda c_range, x
-    asl a               ;multiply by 2 because we are indexing into a table of words
-    tay
-    lda note_table, y   ;read the low byte of the period
-    sta $4002           ;write to SQ1_LO
-    lda note_table+1, y ;read the high byte of the period
-    sta $4003           ;write to SQ1_HI
-    inc rand_cur_entry
-    lda rand_cur_entry	;Check for wraparound at 16
+update_boxes:
+    ldx #00
+-   ldy note0, x
+	lda vertical_positions, y
+	ldy boxes, x
+    sta $0200, y     ; set colors to be the same
+    inx
+    cpx #16          ; Have we set all our boxes?
+    bne -
+    ;Restore colors
+    ldy #00
+    lda #01
+-   ldx boxes, y
+    sta $0202, x     ; set colors to be the same
+    iny
+    cpy #16          ; Have we set all our boxes?
+    bne -
+    ;;Set highlight for selected box
+    ldy cur_box
+    ldx boxes, y
+    lda #02
+    sta $0202, x
+    ;;Set highlight for current note
+    lda cur_note
     sec
-    sbc #16
-    bne +
-    sta rand_cur_entry
-+   rts
+    sbc #01
+    and #$0F    
+    tay
+    ldx boxes, y
+    lda #00
+    sta $0202, x
+    rts
 
 move_up:
 	;Move box
-    lda $0200       ; load sprite Y position
-    sec             
-    sbc #$08        ; A = A - 1
-    sta $0200       ; save sprite Y position
+    ;lda $0200       ; load sprite Y position
+    ;sec             
+    ;sbc #$08        ; A = A - 1
+    ;sta $0200       ; save sprite Y position
     ;Change note
     ldx cur_box
     inc note0, x
@@ -40,18 +56,18 @@ move_up:
 	bne +
 	lda #00 		;Wraparound to bottom
 	sta note0, x
-	lda $0200 		;Now wrap box!
-	sec
-	sbc #128
-	sta $0200
+	;lda $0200 		;Now wrap box!
+	;sec
+	;sbc #128
+	;sta $0200
 +   rts
 
 move_down:
 	;Move box
-    lda $0200       ; load sprite Y position
-    clc             
-    adc #$08        ; A = A + 1
-    sta $0200       ; save sprite Y position
+    ;lda $0200       ; load sprite Y position
+    ;clc             
+    ;adc #$08        ; A = A + 1
+    ;sta $0200       ; save sprite Y position
     ;Change note
     ldx cur_box
     dec note0, x
@@ -59,31 +75,44 @@ move_down:
 	bpl +			;Did we go under?
 	lda #15 		;Wraparound to top
 	sta note0, x
-	lda $0200 		;Now wrap box!
-	clc
-	adc #128
-	sta $0200
+	;lda $0200 		;Now wrap box!
+	;clc
+	;adc #128
+	;sta $0200
 +   rts
     
 move_right:
 	inc cur_box
 	lda cur_box
-	sec
-	sbc #16 		;There are only 16 boxes
-	bne +
-	lda #00 		;Wraparound screen
-	sta cur_box
+	ldy phrase_length   ;Are we at an 8 or 16 note phrase?
+    cpy #08
+    bne @sixteen
+@eight:
+    and #$07 		;Mask down to low 8
+    jmp +
+@sixteen:
+    and #$0F        ;Mask down to low 16
+    sta cur_box
+	;sec
+	;sbc phrase_length	;There are only phrase_length boxes
+	;bne +
+	;lda #00 		;Wraparound screen
+	;sta cur_box
 +	rts
  
 move_left:
 	dec cur_box
 	lda cur_box
-	bpl + 			;Are we still 0 or above?
-	lda #15 		;Wraparound screen
+	bpl + 			    ;Are we still 0 or above?
+	ldy phrase_length	;Wraparound screen
+	dey 				; depending on phrase_length
+	tya  		
 	sta cur_box
 +	rts
 
 load_sequence:
+	;Load next pre-programmed sequence
+	; and reset to first step
 	ldy #00 			;Countdown steps
 -	ldx cur_seq_loader  ;Current step
 	lda sequences, x
@@ -100,7 +129,9 @@ load_sequence:
 	bne +
 	lda #00
 	sta cur_seq_loader
-+	rts
++	lda #00  		;Reset to beginning of cycle
+	sta cur_note
+	rts
 
 change_tempo:
 	inc cur_tempo
@@ -116,6 +147,8 @@ change_tempo:
 	rts
 
 invert_retrogress:
+	;Alternate inverting and reversing
+	; but don't reset to first step
 	lda inv_ret
 	bne + ;@retrogress
 @invert:
@@ -159,6 +192,24 @@ invert_retrogress:
 	sta inv_ret
 	rts
 
+change_scale:
+	ldy #00
+-	ldx cur_scale_loader  ;Current step
+	lda scales, x
+	sta cur_scale0, y
+	inc cur_scale_loader
+	iny
+	tya
+	sec
+	sbc #16
+	bne -	
+	lda cur_scale_loader 	;Check for end of banks
+	cmp #$40 ;scale_banks
+	bne +
+	lda #00
+	sta cur_scale_loader
++	rts
+
 quick_seq:
 	ldx #08
 	ldy #00
@@ -170,6 +221,8 @@ quick_seq:
 	rts
 
 get_next_seq:
+	;Grab a new random sequence
+	; and reset to first step
 	ldx #16 					;Keep track of how many steps are left
 	ldy #00 					;Keep track of where in the 16-note seq we are
 @loop:
@@ -190,6 +243,8 @@ get_next_seq:
 	beq @switch_page
 	dex
 	bne @loop						;Do we have steps left?
+	lda #00  		;Reset to beginning of cycle
+	sta cur_note
 	rts
 @page1:
     txa
@@ -204,6 +259,8 @@ get_next_seq:
 	beq @switch_page
 	dex
 	bne @loop
+	lda #00  		;Reset to beginning of cycle
+	sta cur_note
 	rts
 @switch_page:  
 	lda #00

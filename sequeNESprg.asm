@@ -3,32 +3,19 @@
 ;----------------------------------------------------------------
 ; variables
 ;----------------------------------------------------------------
+; Assign the sprite page to page 2.
+sprite = $200
 
     .enum $0000
 
     joypad1 .dsb 1           ;button states for the current frame
     joypad1_old .dsb 1       ;last frame's button states
     joypad1_pressed .dsb 1   ;current frame's off_to_on transitions
-    sleeping .dsb 1          ;main program sets this and waits for the NMI to clear it.  Ensures the main program is run only once per frame.  
-                        ;   for more information, see Disch's document: http://nesdevhandbook.googlepages.com/theframe.html
-    ;needdraw .rs 1          ;drawing flag.
-    ;dbuffer_index .rs 1     ;current position in the drawing buffer
+    sleeping .dsb 1          ;main program sets this and waits for the NMI to clear it.  
     ptr1 .dsb 2              ;a pointer
-
-   ;NOTE: declare variables using the DSB and DSW directives, like this:
-
-   ;MyVariable0 .dsb 1
-   ;MyVariable1 .dsb 3
 
    .ende
 
-   ;NOTE: you can also split the variable declarations into individual pages, like this:
-
-   ;.enum $0100
-   ;.ende
-
-   ;.enum $0200
-   ;.ende
      
 ;----------------------------------------------------------------
 ; program bank(s)
@@ -41,8 +28,13 @@
 ;;;;; SCALES/SYSTEMS ;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-c_range:  ;Ranges are from 0-14.  15 is silence.
-	.db C3, D3, E3, F3, G3, A3, B3, C4, D4, E4, F4, G4, A4, B4, C5
+scales:  ;Ranges are from 0-14.  15 is silence.
+    .db C3, D3, Eb3, F3, G3, Ab3, Bb3, C4, D4, Eb4, F4, G4, Ab4, Bb4, C5, #00
+    .db C3, D3, E3, F3, G3, A3, B3, C4, D4, E4, F4, G4, A4, B4, C5, #00
+    .db C3, Ds3, F3, Fs3, G3, As3, C4, Ds4, F4, Fs4, G4, As4, C5, Ds5, F5, #00 
+    .db C3, D3, E3, Fs3, Gs3, As3, C4, D4, E4, Fs4, Gs4, As4, C5, D5, E5, #00 
+;Change change_scale when adding banks 
+;;Right now it's at #$40 since there are four banks
 
 sequences:
     .db $00,$03,$00,$04,$00,$07,$06,$07,$06,$02,$03,$02,$03,$04,$07,$09 
@@ -54,8 +46,12 @@ sequences:
 tempi:
     .db $25,$20,$1B,$0B,$08
 
+vertical_positions:
+    .db $B8,$B0,$A8,$A0,$98,$90,$88,$80,$78,$70,$68,$60,$58,$50,$48,$FF 
 
-;    .org $C000
+boxes:
+    .db #00,#04,#08,#12,#16,#20,#24,#28,#32,#36,#40,#44,#48,#52,#56,#60
+
 
    ;;Start init-code
 reset:
@@ -104,9 +100,7 @@ clrmem:
  
     inx
     bne clrmem
- 
-    ;; Other things you can do between vblank waits are set up audio
-    ;; or set up other mapper registers.
+
     
 vblankwait2:
     bit $2002
@@ -154,7 +148,11 @@ vblankwait2:
     sta rand_cur_page
     sta cur_note        ;Our spot in the 16 note sequence
     sta cur_seq_loader  ;Current spot in preprogrammed sequences
+    sta cur_box         ;Which box are we editing?
     sta sound_enable    ;Start off
+
+    lda #00             ;Next scale is the next one up
+    sta cur_scale_loader    ;Start at first scale
 
     lda #02
     sta cur_tempo       ;Start at entry 3 in tempi table
@@ -162,18 +160,17 @@ vblankwait2:
     lda tempi, x
     sta song_tempo      ;The value used to calculate tempo
 
-    lda #07             ;
-    sta cur_box
+    lda #16
+    sta phrase_length   ;Set length of phrase
 
     jsr load_palette
     jsr init_sprites
-    jsr load_sprites
-    jsr load_background
-    jsr load_attribute
-    
-    ;jsr test_audio
+    ;jsr load_sprites
+    ;jsr load_background
+    ;jsr load_attribute
+
 seed_it:
-    lda seeding             ;This is wasteful.. move this to first screen logic
+    lda seeding             
     bne +
     jsr read_joypad
 @check_start
@@ -189,6 +186,7 @@ seed_it:
  
 +   jsr populate_rands
     jsr get_next_seq
+    jsr change_scale    ;Load up our scale
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;; MAIN LOOP ;;;;;;;
@@ -203,7 +201,7 @@ forever:
 +   jsr read_joypad
     jsr handle_input
     jsr sound_play_frame
-    ;jsr prepare_dbuffer
+    jsr update_boxes
     jmp forever ;go back to sleep
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
@@ -226,7 +224,6 @@ NMI:
 
     lda #$00
     sta sleeping            ;wake up the main program
-
     jsr sound_play_frame
     
     pla     ;restore registers
@@ -236,9 +233,6 @@ NMI:
     pla
     rti
 
-;----------------------------
-; read_joypad will capture the current button state and store it in joypad1.  
-;       Off-to-on transitions will be stored in joypad1_pressed
 read_joypad:
     lda joypad1
     sta joypad1_old ;save last frame's joypad button states
@@ -263,11 +257,6 @@ read_joypad:
     
     rts
 
-;---------------------
-; handle_input will perform actions based on input:
-;   A - play sound
-;   B - init sound engine
-;   Start - disable sound engine
 handle_input:
 @check_A:
     lda joypad1_pressed
@@ -288,7 +277,7 @@ handle_input:
     lda joypad1_pressed
     and #$10
     beq @check_up
-    jsr sound_load
+    jsr change_scale
 @check_up:
     lda joypad1_pressed
     and #$08
@@ -359,33 +348,35 @@ load_palette:
     bne -     ;if x = $20, 32 bytes copied, all done
     rts
 
-load_sprites:
-    ldx #$00              ; start at 0
--   lda sprites, x        ; load data from address (sprites +  x)
-    sta $0200, x          ; store into RAM address ($0200 + x)
-    inx                   ; X = X + 1
-    cpx #$20              ; Compare X to hex $20, decimal 32
-    bne -               ; Branch to - if compare was Not Equal to zero
-                        ; if compare was equal to 32, keep going down
-    
-    lda #%10000000   ; enable NMI, sprites from Pattern Table 1
-    sta $2000
-
-    lda #%00010000   ; enable sprites
-    sta $2001
-    rts
-
 init_sprites:
+    ldy #00         ;Counter
+    ;Set vertical of all sprites
     lda #$80
-    sta $0200        ; put sprite 0 in center ($80) of screen vert
-    sta $0203        ; put sprite 0 in center ($80) of screen horiz
-    ;sta $0204
-    ;lda #$90
-    ;sta $0207
-
+-   ldx boxes, y        ;Current box offset
+    sta $0200, x        ; put sprite in center ($80) of screen vert
+    iny
+    cpy #16
+    bne -
+    ;Set horizontal of all sprites
+    lda #$0A
+    ldy #00
+-   ldx boxes, y        ;Current box offset
+    sta $0203, x        ; determine sprites' horizontal values
+    clc 
+    adc #$0F            ; increase horizontal for next sprite 
+    iny
+    cpy #16             ;Are we done?
+    bne -     
+;;;;;;;;;;;;;;; Colors
     lda #$00
     sta $0201        ; tile number = 0
-    sta $0202        ; color = 0, no flipping
+    lda #$01
+    ldy #00
+-   ldx boxes, y
+    sta $0202, x     ; set colors to be the same
+    iny
+    cpy #16          ; Have we set all our boxes?
+    bne -
 
     lda #%10000000   ; enable NMI, sprites from Pattern Table 0
     sta $2000
@@ -408,7 +399,6 @@ load_background:
     BNE -  ; Branch to LoadBackgroundLoop if compare was Not Equal to zero
                         ; if compare was equal to 128, keep going 
     rts
-
                           
 load_attribute:
     LDA $2002             ; read PPU status to reset the high/low latch
@@ -434,20 +424,17 @@ load_attribute:
 ; palette data
 palette:
     .db $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F  ;background palette data
-    .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C  ;sprite palette data
+    .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$20,$33,$35,$0F,$02,$38,$3C  ;sprite palette data
+;    .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C  ;sprite palette data
 
-sprites:
-    ;vert tile attr horiz
-    .db $80, $32, $00, $80   ;sprite 0
-    .db $80, $33, $00, $88   ;sprite 1
-    .db $88, $34, $00, $80   ;sprite 2
-    .db $88, $35, $00, $88   ;sprite 3
 
 attribute:
-    .db %00000000, %00001000, %01010000, %00010000, %00000000, %00000000, %00000000, %00110000
+; Attribute table
+.byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+.byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+.byte $00,$00,$00,$00,$00,$00,$00,$00,$F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0
+.byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$0F,$0F,$0F,$0F,$0F,$0F,$0F,$0F
 
-    ;Note: octaves in music traditionally start from C, not A.  
-;      I've adjusted my octave numbers to reflect this.
 note_table:
     .word                                                                $07F1, $0780, $0713 ; A1-B1 ($00-$02)
     .word $06AD, $064D, $05F3, $059D, $054D, $0500, $04B8, $0475, $0435, $03F8, $03BF, $0389 ; C2-B2 ($03-$0E)
@@ -460,44 +447,4 @@ note_table:
     .word $000C, $000C, $000B, $000A, $000A, $0009, $0008                                    ; C9-F#9 ($57-$5D)
 
 
-
-
-latch_controller:
-    LDA #$01
-    STA $4016
-    LDA #$00
-    STA $4016       ; tell both the controllers to latch buttons
-
-read_a: 
-    LDA $4016       ; player 1 - A
-    AND #%00000001  ; only look at bit 0
-    BEQ read_a_done   ; branch to ReadADone if button is NOT pressed (0)
-                  ; add instructions here to do something when button IS pressed (1)
-    LDA $0203       ; load sprite X position
-    CLC             ; make sure the carry flag is clear
-    ADC #$01        ; A = A + 1
-    STA $0203       ; save sprite X position
-read_a_done:        ; handling this button is done
   
-
-read_b: 
-    LDA $4016       ; player 1 - B
-    AND #%00000001  ; only look at bit 0
-    BEQ read_b_done   ; branch to ReadBDone if button is NOT pressed (0)
-                  ; add instructions here to do something when button IS pressed (1)
-    LDA $0203       ; load sprite X position
-    SEC             ; make sure carry flag is set
-    SBC #$01        ; A = A - 1
-    STA $0203       ; save sprite X position
-read_b_done:        ; handling this button is done
-
-    ;;This is the PPU clean up section, so rendering the next frame starts properly.
-    lda #%10010000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
-    sta $2000
-    lda #%00011110   ; enable sprites, enable background, no clipping on left side
-    sta $2001
-    lda #$00        ;;tell the ppu there is no background scrolling
-    sta $2005
-    sta $2005
-
-    rti        

@@ -74,6 +74,29 @@ song_tempo = $FB	;The current value used to set tempo in sound engine
 cur_seq_loader = $FC  ;Preprogrammed seqs
 cur_box = $FD		;What box are we editing? 0-15
 
+phrase_length = $BF
+cur_scale_loader = $BE
+
+cur_scale0 = $A0
+cur_scale1 = $A1
+cur_scale2 = $A2
+cur_scale3 = $A3
+cur_scale4 = $A4
+cur_scale5 = $A5
+cur_scale6 = $A6
+cur_scale7 = $A7
+cur_scale8 = $A8
+cur_scale9 = $A9
+cur_scaleA = $AA
+cur_scaleB = $AB
+cur_scaleC = $AC
+cur_scaleD = $AD
+cur_scaleE = $AE
+cur_scaleF = $AF
+
+
+
+
 seeding = $FE		;A flag for seeding... set it to 1 to stop seeding
 
 rand_seq0 = $0600
@@ -81,7 +104,22 @@ rand_seq1 = $0700
 
 this_note = $00
 
-
+box0 = #00
+box1 = #04
+box2 = #08
+box3 = #12
+box4 = #16
+box5 = #20
+box6 = #24
+box7 = #28
+box8 = #32
+box9 = #36
+boxA = #40
+boxB = #44
+boxC = #48
+boxD = #52
+boxE = #56
+boxF = #60
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; NOTE VALUES ;;;;;
