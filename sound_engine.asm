@@ -5,7 +5,7 @@ sound_disable_flag .dsb 1   ;a flag variable that keeps track of whether the sou
 sound_frame_counter .dsb 1   ;a primitive counter used to time notes in this demo
 sfx_playing .dsb 1           ;a flag that tells us if our sound is playing or not.
 sfx_index .dsb 1             ;our current position in the sound data.
-
+sound_enable .dsb 1         ;a flag to see if sound needs to be enabled on next frame
     .ende
     
 sound_init:
@@ -45,27 +45,36 @@ sound_load:
 
 sound_play_frame:
     lda sound_disable_flag
-    bne @done   ;if disable flag is set, don't advance a frame
+    bne ++   ;if disable flag is set, don't advance a frame
     
     lda sfx_playing
-    beq @done  ;if our sound isn't playing, don't advance a frame
+    beq ++  ;if our sound isn't playing, don't advance a frame
     
     inc sound_frame_counter     
     lda sound_frame_counter
     cmp song_tempo    ;***change this compare value to make the notes play faster or slower***
-    bne @done   ;only take action once every 8 frames.
+    bne ++   ;only take action once every 8 frames.
     
     lda cur_note
     and #$0F        ;Mask down to low 16
     tay
     lda note0, y
-    tay
-    lda c_range, y
-    ;read the next byte from our sound data stream
-    ;lda sfx1_data, y    ;***comment out this line and uncomment one of the ones below to play another data stream (data streams are located in sound_data.i)***
-    ;lda sfx2_data, y
-    ;lda sfx3_data, y
-@note:          
+    cmp #15         ;Is our note silence?
+    bne @note       ; If not, play a note
+    lda #$00        ;Otherwise,
+    sta $4015       ; disable all channels
+    inc sound_enable    ;Set flag to re-enable channels next time
+    jmp reset_frame_counter
+  ;;;;;Then play silence     ; Then move on.
+@note:  
+    tay                 ;Store note in y for c_range      
+    lda sound_enable    ;Is sound disabled?
+    beq +
+    lda #$0F            ; then re-enable
+    sta $4015
+    lda #00
+    sta sound_enable
++   lda c_range, y
     asl a       ;multiply by 2, because our note table is stored as words
     tay         ;we'll use this as an index into the note table
     
@@ -78,13 +87,12 @@ sound_play_frame:
     lda #$08    ;set negate flag so low Square notes aren't silenced
     sta $4001
     
-    inc cur_note    ;Move to next of our 16 notes
-
     ;inc sfx_index   ;move our index to the next byte position in the data stream
-@reset_counter:
+reset_frame_counter:
+    inc cur_note    ;Move to next of our 16 notes
     lda #$00
     sta sound_frame_counter ;reset frame counter so we can start counting to 8 again.    
-@done:
+++ ;@done:
     rts
 
     ;.include "note_table.i" ;period lookup table for notes

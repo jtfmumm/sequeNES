@@ -120,13 +120,17 @@ invert_retrogress:
 	bne + ;@retrogress
 @invert:
 	ldx #16
--	lda #15 		;Our values range from 0-15	
-	sec 			; so subtract from 15 to get
+-	lda note0, x 
+	cmp #15  		;Is our note silence? 
+	beq @next  		; If so, leave it alone.
+	lda #14  		;Our note values range from 0-14 	
+	sec 			; so subtract from 14 to get
 	sbc note0, x 	; inversion (around a center line)
 	sta note0, x
+@next:
 	dex
 	bne - 
-	lda #15
+	lda #14
 	sec 			; do it one last time on 0
 	sbc note0, x 	
 	sta note0, x

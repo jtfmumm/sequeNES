@@ -41,8 +41,8 @@
 ;;;;; SCALES/SYSTEMS ;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-c_range:
-	.db C3, D3, E3, F3, G3, A3, B3, C4, D4, E4, F4, G4, A4, B4, C5, D5
+c_range:  ;Ranges are from 0-14.  15 is silence.
+	.db C3, D3, E3, F3, G3, A3, B3, C4, D4, E4, F4, G4, A4, B4, C5
 
 sequences:
     .db $00,$03,$00,$04,$00,$07,$06,$07,$06,$02,$03,$02,$03,$04,$07,$09 
@@ -154,6 +154,7 @@ vblankwait2:
     sta rand_cur_page
     sta cur_note        ;Our spot in the 16 note sequence
     sta cur_seq_loader  ;Current spot in preprogrammed sequences
+    sta sound_enable    ;Start off
 
     lda #02
     sta cur_tempo       ;Start at entry 3 in tempi table
