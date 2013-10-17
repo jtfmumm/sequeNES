@@ -1,3 +1,6 @@
+;;Sound engine
+;Built on a skeleton written by Metal Slime for playing individual sounds
+
 
     .enum $0300 ;sound engine variables will be on the $0300 page of RAM
     

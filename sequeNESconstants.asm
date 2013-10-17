@@ -94,9 +94,6 @@ cur_scaleD = $AD
 cur_scaleE = $AE
 cur_scaleF = $AF
 
-
-
-
 seeding = $FE		;A flag for seeding... set it to 1 to stop seeding
 
 rand_seq0 = $0600
@@ -120,6 +117,7 @@ boxC = #48
 boxD = #52
 boxE = #56
 boxF = #60
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; NOTE VALUES ;;;;;

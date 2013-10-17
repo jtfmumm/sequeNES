@@ -52,87 +52,10 @@ vertical_positions:
 boxes:
     .db #00,#04,#08,#12,#16,#20,#24,#28,#32,#36,#40,#44,#48,#52,#56,#60
 
-
-   ;;Start init-code
-reset:
-    sei        ;; ignore IRQs
-    cld        ;; disable decimal mode
-    ldx #$40
-    stx $4017  ;; disable APU frame IRQ
-    ldx #$ff
-    txs        ;; Set up stack
-    inx        ;; now X = 0
-    stx $2000  ;; disable NMI
-    stx $2001  ;; disable rendering
-    stx $4010  ;; disable DMC IRQs
- 
-    ;; Optional (omitted):
-    ;; Set up mapper and jmp to further init code here.
- 
-    ;; Clear the vblank flag, so we know that we are waiting for the
-    ;; start of a vertical blank and not powering on with the
-    ;; vblank flag spuriously set
-    bit $2002
- 
-    ;; First of two waits for vertical blank to make sure that the
-    ;; PPU has stabilized
-vblankwait1: 
-    bit $2002
-    bpl vblankwait1
- 
-    ;; We now have about 30,000 cycles to burn before the PPU stabilizes.
-    ;; One thing we can do with this time is put RAM in a known state.
-    ;; Here we fill it with $00, which matches what (say) a C compiler
-    ;; expects for BSS.  Conveniently, X is still 0.
-    txa
-clrmem:
-    sta $000,x
-    sta $100,x
-    sta $300,x
-    sta $400,x
-    sta $500,x
-    sta $600,x
-    sta $700,x  ;; Remove this if you're storing reset-persistent data
- 
-    ;; We skipped $200,x on purpose.  Usually, RAM page 2 is used for the
-    ;; display list to be copied to OAM.  OAM needs to be initialized to
-    ;; $EF-$FF, not 0, or you'll get a bunch of garbage sprites at (0, 0).
- 
-    inx
-    bne clrmem
-
-    
-vblankwait2:
-    bit $2002
-    bpl vblankwait2
-
-;Enable sound channels
-    jsr sound_init
-    
-    ;jsr sound_load
-    
-    lda #$88
-    sta $2000   ;enable NMIs
-    lda #$18
-    sta $2001   ;turn PPU on
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; INITIAL VALUES ;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
-    lda #$A7    ;Store $41A7 as multiplier (16807);
-    sta mult0 ;mult0
-    lda #$41
-    sta mult1 ;mult1
-    lda #$FF    ;Store $3FFFFFFF as modulus (2^31 - 1)
-    sta mod0 ;mod0
-    lda #$FF
-    sta mod1 ;mod1
-    lda #$FF
-    sta mod2 ;mod2
-    lda #$3F
-    sta mod3 ;mod3
-
+initialize:
     lda #$A4    ;Load a seed into the random number generator
     sta rand0
     lda #$5B
@@ -164,10 +87,7 @@ vblankwait2:
     sta phrase_length   ;Set length of phrase
 
     jsr load_palette
-    jsr init_sprites
-    ;jsr load_sprites
-    ;jsr load_background
-    ;jsr load_attribute
+    jsr load_sprites
 
 seed_it:
     lda seeding             
@@ -313,27 +233,71 @@ IRQ:
    rti
 
 
+   ;;Start init-code
+reset:
+    sei        ;; ignore IRQs
+    cld        ;; disable decimal mode
+    ldx #$40
+    stx $4017  ;; disable APU frame IRQ
+    ldx #$ff
+    txs        ;; Set up stack
+    inx        ;; now X = 0
+    stx $2000  ;; disable NMI
+    stx $2001  ;; disable rendering
+    stx $4010  ;; disable DMC IRQs
+ 
+    ;; Optional (omitted):
+    ;; Set up mapper and jmp to further init code here.
+ 
+    ;; Clear the vblank flag, so we know that we are waiting for the
+    ;; start of a vertical blank and not powering on with the
+    ;; vblank flag spuriously set
+    bit $2002
+ 
+    ;; First of two waits for vertical blank to make sure that the
+    ;; PPU has stabilized
+vblankwait1: 
+    bit $2002
+    bpl vblankwait1
+ 
+    ;; We now have about 30,000 cycles to burn before the PPU stabilizes.
+    ;; One thing we can do with this time is put RAM in a known state.
+    ;; Here we fill it with $00, which matches what (say) a C compiler
+    ;; expects for BSS.  Conveniently, X is still 0.
+    txa
+clrmem:
+    sta $000,x
+    sta $100,x
+    sta $300,x
+    sta $400,x
+    sta $500,x
+    sta $600,x
+    sta $700,x  ;; Remove this if you're storing reset-persistent data
+ 
+    ;; We skipped $200,x on purpose.  Usually, RAM page 2 is used for the
+    ;; display list to be copied to OAM.  OAM needs to be initialized to
+    ;; $EF-$FF, not 0, or you'll get a bunch of garbage sprites at (0, 0).
+ 
+    inx
+    bne clrmem
 
-;Background
-background:
-    ;lda #%10000000   ;intensify blues
-    ;sta $2001
-    lda #$A0
-    sta $3F10
-    lda #01
-    sta arg0   ;My variable for rep_delay count
-    jsr rep_delay
-    ;lda #%01000000
-    ;sta $2001
-    lda #$A0
-    sta $3F10
-    lda #06
-    sta arg0
-    jsr rep_delay
-    jmp background
+    
+vblankwait2:
+    bit $2002
+    bpl vblankwait2
 
+;Enable sound channels
+    jsr sound_init
+    
+    ;jsr sound_load
+    
+    lda #$88
+    sta $2000   ;enable NMIs
+    lda #$18
+    sta $2001   ;turn PPU on
+    jmp initialize
 
-;BORROWED SUBROUTINES
+;;Initialization subroutines
 load_palette:
     lda $2002    ; read PPU status to reset the high/low latch
     lda #$3F
@@ -348,7 +312,7 @@ load_palette:
     bne -     ;if x = $20, 32 bytes copied, all done
     rts
 
-init_sprites:
+load_sprites:
     ldy #00         ;Counter
     ;Set vertical of all sprites
     lda #$80
@@ -384,42 +348,6 @@ init_sprites:
     lda #%00010000   ; enable sprites
     sta $2001
     rts    
-
-load_background:
-    LDA $2002             ; read PPU status to reset the high/low latch
-    LDA #$20
-    STA $2006             ; write the high byte of $2000 address
-    LDA #$00
-    STA $2006             ; write the low byte of $2000 address
-    LDX #$00              ; start out at 0
--   LDA background, x     ; load data from address (background + the value in x)
-    STA $2007             ; write to PPU
-    INX                   ; X = X + 1
-    CPX #$80              ; Compare X to hex $80, decimal 128 - copying 128 bytes
-    BNE -  ; Branch to LoadBackgroundLoop if compare was Not Equal to zero
-                        ; if compare was equal to 128, keep going 
-    rts
-                          
-load_attribute:
-    LDA $2002             ; read PPU status to reset the high/low latch
-    LDA #$23
-    STA $2006             ; write the high byte of $23C0 address
-    LDA #$C0
-    STA $2006             ; write the low byte of $23C0 address
-    LDX #$00              ; start out at 0
--   LDA attribute, x      ; load data from address (attribute + the value in x)
-    STA $2007             ; write to PPU
-    INX                   ; X = X + 1
-    CPX #$08              ; Compare X to hex $08, decimal 8 - copying 8 bytes
-    BNE -  ; Branch to LoadAttributeLoop if compare was Not Equal to zero
-                        ; if compare was equal to 128, keep going down
-                    
-    LDA #%10010000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
-    STA $2000
-
-    LDA #%00011110   ; enable sprites, enable background, no clipping on left side
-    STA $2001
-    rts
 
 ; palette data
 palette:
