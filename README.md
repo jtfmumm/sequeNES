@@ -1,7 +1,9 @@
 sequeNES
 ========
 
-A music sequencer for NES written in 6502 assembly 
+A music sequencer for NES written in 6502 assembly.
+
+Download the ROM here: http://jtfmumm.com/sequeNES.html
 
 == Instructions ==
 
